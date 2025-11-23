@@ -9,12 +9,13 @@ pipeline {
             }
         }
         
-        stage('Build Maven JAR') {
+        stage('Build Maven') {
             steps {
-                echo '🔨 PHASE 2: BUILD - Création du JAR'
+                echo ' BUILD - Compilation du projet'
                 bat 'mvnw.cmd clean package -DskipTests'
             }
         }
+
         
         stage('Tests Unitaires') {
             steps {
