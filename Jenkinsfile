@@ -4,29 +4,45 @@ pipeline {
     stages {
         stage('Checkout Git') {
             steps {
-                echo '🎯 PHASE 1: CHECKOUT - Récupération du code source'
+                echo ' Récupération du code source'
             }
         }
         
         stage('Build Maven') {
             steps {
-                echo '🔨 PHASE 2: BUILD - Compilation du projet'
+                echo ' BUILD - Compilation du projet'
+                bat 'mvnw.cmd clean package -DskipTests'
             }
         }
         
         stage('Tests Unitaires') {
             steps {
-                echo '🧪 PHASE 3: TEST - Exécution des tests'
+                echo 'TEST - Exécution des tests'
+                bat 'mvnw.cmd test'
+            }
+        }
+      
+        stage('Build Docker Image') {
+            steps {
+                echo ' BUILD DOCKER - Création de l image'
+                bat 'docker build -t student-management .'
+            }
+        }
+        
+        stage('Deploy Docker Container') {
+            steps {
+                echo 'DEPLOY - Lancement du conteneur'
+                bat 'docker run -d -p 8080:8080 --name student-app student-management'
             }
         }
     }
     
     post {
         always {
-            echo '📊 PIPELINE TERMINÉ - 3 phases CI implémentées'
+            echo ' PIPELINE CI/CD TERMINÉ'
         }
         success {
-            echo '🎉 SUCCÈS: Toutes les phases du pipeline sont réussies!'
+            echo 'SUCCÈS: Application Dockerisée et déployée!'
         }
     }
 }
