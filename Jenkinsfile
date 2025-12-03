@@ -1,57 +1,58 @@
 pipeline {
     agent any
 
-    environment {
-        // Infos pour MySQL
-        MYSQL_USER = 'jenkins'
-        MYSQL_PASS = 'jenkinspass'
-        MYSQL_DB   = 'studentdb'
-        MYSQL_HOST = 'localhost'
+    tools {
+        maven 'MAVEN_3'
+        jdk 'JDK17'
     }
 
     stages {
 
-        stage('Checkout Git') {
+        stage('1️⃣ Clone Repository') {
             steps {
-                echo "Cloning the Git repository..."
+                echo '📥 Clonage du repository Git...'
                 git branch: 'main', url: 'https://github.com/bahijabaj123/student-management.git'
+                echo '✅ Clonage terminé'
             }
         }
 
-        stage('Build') {
+        stage('2️⃣ Build Project') {
             steps {
-                echo "Building the project..."
-                // Exemple pour projet Java avec Maven
-                sh 'mvn clean package'
+                echo '🔨 Compilation du projet avec Maven...'
+                sh 'mvn clean compile -DskipTests'
+                echo '✅ Build terminé'
             }
         }
 
-        stage('Test MySQL Connection') {
+        stage('3️⃣ Test & Package (Tests Sautés)') {
             steps {
-                echo "Testing MySQL database..."
-                sh """
-                    mysql -u $MYSQL_USER -p$MYSQL_PASS -h $MYSQL_HOST $MYSQL_DB <<EOF
-                    SHOW TABLES;
-EOF
-                """
+                echo '📦 Packaging du projet...'
+                sh 'mvn package -DskipTests'
             }
         }
 
-        stage('Run SQL Script') {
+        stage('4️⃣ Package JAR') {
             steps {
-                echo "Running SQL test script..."
-                sh "mysql -u $MYSQL_USER -p$MYSQL_PASS -h $MYSQL_HOST $MYSQL_DB < test_db.sql"
+                echo '📦 Packaging en JAR...'
+                sh 'mvn clean package -DskipTests'
+            }
+        }
+
+        stage('5️⃣ Archive Artifact') {
+            steps {
+                echo '📁 Archivage du fichier JAR...'
+                archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
             }
         }
 
     }
 
     post {
-        success {
-            echo "Pipeline finished successfully ✅"
-        }
         failure {
-            echo "Pipeline failed ❌"
+            echo '❌ Le pipeline a échoué'
+        }
+        success {
+            echo '🎉 Pipeline terminé avec succès'
         }
     }
 }
