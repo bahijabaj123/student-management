@@ -2,43 +2,56 @@ pipeline {
     agent any
 
     environment {
-        DB_URL = "jdbc:mysql://localhost:3306/studentdb"
-        DB_USER = "studentuser"
-        DB_PASSWORD = "1234"
+        // Infos pour MySQL
+        MYSQL_USER = 'jenkins'
+        MYSQL_PASS = 'jenkinspass'
+        MYSQL_DB   = 'studentdb'
+        MYSQL_HOST = 'localhost'
     }
 
     stages {
-        stage('Clone') {
+
+        stage('Checkout Git') {
             steps {
-                git branch: 'main', url: 'https://github.com/bahijabaj123/student-management.git'
+                echo "Cloning the Git repository..."
+                git branch: 'main', url: 'https://github.com/ton-repo.git'
             }
         }
 
         stage('Build') {
             steps {
+                echo "Building the project..."
+                // Exemple pour projet Java avec Maven
                 sh 'mvn clean package'
             }
         }
 
-        stage('Tests') {
+        stage('Test MySQL Connection') {
             steps {
-                sh 'mvn test'
+                echo "Testing MySQL database..."
+                sh """
+                    mysql -u $MYSQL_USER -p$MYSQL_PASS -h $MYSQL_HOST $MYSQL_DB <<EOF
+                    SHOW TABLES;
+EOF
+                """
             }
         }
 
-        stage('Optional: Build Docker') {
+        stage('Run SQL Script') {
             steps {
-                sh 'docker build -t student-management:latest .'
+                echo "Running SQL test script..."
+                sh "mysql -u $MYSQL_USER -p$MYSQL_PASS -h $MYSQL_HOST $MYSQL_DB < test_db.sql"
             }
         }
+
     }
 
     post {
         success {
-            echo "✅ Pipeline terminé avec succès !"
+            echo "Pipeline finished successfully ✅"
         }
         failure {
-            echo "🚨 Le pipeline a échoué"
+            echo "Pipeline failed ❌"
         }
     }
 }
