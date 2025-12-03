@@ -4,7 +4,7 @@ pipeline {
     stages {
         stage('Clone') {
             steps {
-                git branch: 'main', url: 'https://github.com/TON-NOM/student-management.git'
+                git branch: 'main', url: 'https://github.com/bahijabaj123/student-management.git'
             }
         }
 
