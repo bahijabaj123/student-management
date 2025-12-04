@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     tools {
-        maven 'M2_HOME'
-        jdk 'JAVA_HOME'
+        maven 'M2_HOME'     // correspond à ton installation Maven
+        jdk 'JAVA_HOME'     // correspond à ton installation JDK
     }
 
     stages {
@@ -19,7 +19,7 @@ pipeline {
         stage('2️⃣ Build Project') {
             steps {
                 echo '🔨 Compilation du projet avec Maven...'
-                sh 'mvn clean compile -DskipTests'
+                bat 'mvn clean compile -DskipTests'
                 echo '✅ Build terminé'
             }
         }
@@ -27,14 +27,16 @@ pipeline {
         stage('3️⃣ Test & Package (Tests Sautés)') {
             steps {
                 echo '📦 Packaging du projet...'
-                sh 'mvn package -DskipTests'
+                bat 'mvn package -DskipTests'
+                echo '✅ Packaging terminé'
             }
         }
 
         stage('4️⃣ Package JAR') {
             steps {
-                echo '📦 Packaging en JAR...'
-                sh 'mvn clean package -DskipTests'
+                echo '📦 Packaging final en JAR...'
+                bat 'mvn clean package -DskipTests'
+                echo '✅ JAR prêt'
             }
         }
 
@@ -56,4 +58,3 @@ pipeline {
         }
     }
 }
-
