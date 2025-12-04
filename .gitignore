@@ -1,8 +1,14 @@
+# Fichiers généraux
 HELP.md
-target/
+
+# Ignorer tout le dossier target
+/target/*
+
+# Sauf le JAR compilé que tu veux partager
+!target/monProjet.jar
+
+# Maven wrapper
 .mvn/wrapper/maven-wrapper.jar
-!**/src/main/**/target/
-!**/src/test/**/target/
 
 ### STS ###
 .apt_generated
