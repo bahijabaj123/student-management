@@ -7,36 +7,33 @@ pipeline {
     }
 
     environment {
-        // CONFIGURATION DOCKER - À ADAPTER AVEC VOS INFOS
-        DOCKER_REGISTRY = 'https://index.docker.io/v1/'
-        DOCKER_IMAGE = 'bahija123/student-management'  // Votre nom Docker Hub
-        DOCKER_TAG = "${BUILD_NUMBER}-${env.BRANCH_NAME ?: 'main'}"
+        // Nom de l'application
+        APP_NAME = 'student-management'
+        APP_PORT = '8080'
         
-        // CONFIGURATION KUBERNETES
+        // Configuration Minikube/Kubernetes
         K8S_NAMESPACE = 'default'
-        K8S_DEPLOYMENT = 'student-management-app'
-        K8S_SERVICE = 'student-service'
+        K8S_DEPLOYMENT = "${APP_NAME}-deployment"
+        K8S_SERVICE = "${APP_NAME}-service"
+        
+        // Image Docker (on va utiliser une image temporaire)
+        DOCKER_IMAGE = 'openjdk:11-jre-slim'
     }
 
     stages {
-        // ==================== ÉTAPE 1 : CHECKOUT CODE ====================
+        // ==================== ÉTAPE 1 : CHECKOUT ====================
         stage('1️⃣ Checkout Code') {
             steps {
                 echo '📥 Clonage du repository Git...'
-                git branch: 'main', 
-                     url: 'https://github.com/bahijabaj123/student-management.git'
-            
+                git branch: 'main', url: 'https://github.com/bahijabaj123/student-management2.git'
                 echo '✅ Repository cloné'
-                
-                // Afficher la structure
-                sh 'ls -la'
             }
         }
 
-        // ==================== ÉTAPE 2 : BUILD AVEC MAVEN ====================
+        // ==================== ÉTAPE 2 : BUILD MAVEN ====================
         stage('2️⃣ Build avec Maven') {
             steps {
-                echo '🔨 Construction du projet Java...'
+                echo '🔨 Compilation et tests...'
                 sh 'mvn clean compile'
                 echo '✅ Compilation terminée'
                 
@@ -47,8 +44,7 @@ pipeline {
             
             post {
                 success {
-                    echo '📊 Rapport de tests généré'
-                    junit 'target/surefire-reports/*.xml'  // Publier les résultats
+                    junit 'target/surefire-reports/*.xml'
                 }
             }
         }
@@ -56,130 +52,89 @@ pipeline {
         // ==================== ÉTAPE 3 : PACKAGE JAR ====================
         stage('3️⃣ Package JAR') {
             steps {
-                echo '📦 Création du package JAR...'
+                echo '📦 Création du JAR executable...'
                 sh 'mvn package -DskipTests'
-                echo '✅ JAR créé'
                 
                 // Vérifier le JAR
-                sh 'ls -lh target/*.jar'
+                sh '''
+                    echo "📊 Fichier JAR généré :"
+                    ls -lh target/*.jar
+                    echo ""
+                    echo "🎯 Taille du JAR :"
+                    du -h target/*.jar
+                '''
                 
-                // Archiver le JAR
+                // Archiver
                 archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+                echo '✅ JAR créé et archivé'
             }
         }
 
-        // ==================== ÉTAPE 4 : BUILD DOCKER IMAGE ====================
-        stage('4️⃣ Build Docker Image') {
+        // ==================== ÉTAPE 4 : CRÉER FICHIERS KUBERNETES ====================
+        stage('4️⃣ Préparer Kubernetes') {
             steps {
-                echo '🐳 Construction de l\'image Docker...'
+                echo '⚙️  Préparation des fichiers Kubernetes...'
                 
                 script {
-                    // Vérifier/Créer Dockerfile
-                    if (!fileExists('Dockerfile')) {
-                        writeFile file: 'Dockerfile', text: '''# Dockerfile pour application Java Spring Boot
-FROM openjdk:11-jre-slim
-LABEL maintainer="bahija123"
-
-RUN apt-get update && apt-get install -y \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-# Copier le JAR
-COPY target/*.jar app.jar
-
-# Exposer le port
-EXPOSE 8080
-
-# Commande de démarrage
-ENTRYPOINT ["java", "-jar", "app.jar"]
-'''
-                        echo '📄 Dockerfile créé automatiquement'
-                    }
+                    // Créer le dossier k8s
+                    sh 'mkdir -p k8s-manifests'
                     
-                    // Vérifier le contenu
-                    sh 'cat Dockerfile'
+                    // 1. Créer un ConfigMap pour le JAR (solution simple)
+                    writeFile file: 'k8s-manifests/configmap.yaml', text: """
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ${APP_NAME}-jar
+  namespace: ${K8S_NAMESPACE}
+data:
+  app.jar: |
+    # Le JAR sera copié ici après le build
+"""
                     
-                    // Construire l'image
-                    sh """
-                        docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
-                        docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest
-                    """
-                    
-                    // Lister les images
-                    sh 'docker images | grep ${DOCKER_IMAGE}'
-                }
-                echo '✅ Image Docker construite'
-            }
-        }
-
-        // ==================== ÉTAPE 5 : PUSH DOCKER IMAGE ====================
-        stage('5️⃣ Push Docker Image') {
-            steps {
-                echo '⬆️  Pushing image to Docker Hub...'
-                
-                script {
-                    // UTILISATION DE VOTRE TOKEN - L'ID DOIT CORRESPONDRE À JENKINS
-                    withCredentials([usernamePassword(
-                        credentialsId: 'docker-hub-credentials',  // L'ID que vous avez créé
-                        usernameVariable: 'DOCKER_USER',
-                        passwordVariable: 'DOCKER_PASS'
-                    )]) {
-                        sh """
-                            # Se connecter à Docker Hub
-                            echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
-                            
-                            # Pousser les images
-                            docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
-                            docker push ${DOCKER_IMAGE}:latest
-                            
-                            # Se déconnecter
-                            docker logout
-                        """
-                    }
-                }
-                echo '✅ Image poussée sur Docker Hub'
-            }
-        }
-
-        // ==================== ÉTAPE 6 : DÉPLOYER SUR KUBERNETES ====================
-        stage('6️⃣ Déployer sur Kubernetes Cluster') {
-            steps {
-                echo '⚙️  Déploiement sur Kubernetes...'
-                
-                script {
-                    // Créer le dossier k8s s'il n'existe pas
-                    sh 'mkdir -p k8s'
-                    
-                    // Fichier de déploiement
-                    writeFile file: 'k8s/deployment.yaml', text: """
+                    // 2. Créer le Deployment
+                    writeFile file: 'k8s-manifests/deployment.yaml', text: """
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ${K8S_DEPLOYMENT}
   namespace: ${K8S_NAMESPACE}
   labels:
-    app: student-management
+    app: ${APP_NAME}
 spec:
-  replicas: 2
+  replicas: 1  # Commençons avec 1 replica
   selector:
     matchLabels:
-      app: student-management
+      app: ${APP_NAME}
   template:
     metadata:
       labels:
-        app: student-management
+        app: ${APP_NAME}
     spec:
       containers:
-      - name: student-management
-        image: ${DOCKER_IMAGE}:${DOCKER_TAG}
-        imagePullPolicy: Always
+      - name: ${APP_NAME}
+        image: ${DOCKER_IMAGE}
+        command: ["sh", "-c"]
+        args:
+          - |
+            # Créer le répertoire de l'app
+            mkdir -p /app
+            cd /app
+            
+            # Attendre que le JAR soit disponible
+            echo "Attente du JAR..."
+            while [ ! -f /jar-source/app.jar ]; do sleep 2; done
+            
+            # Copier le JAR
+            cp /jar-source/app.jar .
+            
+            # Démarrer l'application
+            echo "Démarrage de l'application..."
+            java -jar app.jar
         ports:
-        - containerPort: 8080
-        env:
-        - name: SPRING_PROFILES_ACTIVE
-          value: "production"
+        - containerPort: ${APP_PORT}
+        volumeMounts:
+        - name: jar-volume
+          mountPath: /jar-source
         resources:
           requests:
             memory: "512Mi"
@@ -188,21 +143,19 @@ spec:
             memory: "1Gi"
             cpu: "500m"
         readinessProbe:
-          httpGet:
-            path: /actuator/health
-            port: 8080
+          tcpSocket:
+            port: ${APP_PORT}
           initialDelaySeconds: 30
           periodSeconds: 10
-        livenessProbe:
-          httpGet:
-            path: /actuator/health
-            port: 8080
-          initialDelaySeconds: 45
-          periodSeconds: 15
+      volumes:
+      - name: jar-volume
+        hostPath:
+          path: /tmp/${APP_NAME}
+          type: DirectoryOrCreate
 """
                     
-                    // Fichier de service
-                    writeFile file: 'k8s/service.yaml', text: """
+                    // 3. Créer le Service
+                    writeFile file: 'k8s-manifests/service.yaml', text: """
 apiVersion: v1
 kind: Service
 metadata:
@@ -210,126 +163,178 @@ metadata:
   namespace: ${K8S_NAMESPACE}
 spec:
   selector:
-    app: student-management
+    app: ${APP_NAME}
   ports:
-  - name: http
+  - protocol: TCP
     port: 80
-    targetPort: 8080
-    nodePort: 30080
+    targetPort: ${APP_PORT}
   type: NodePort
 """
                     
-                    // Appliquer les configurations
-                    sh """
-                        echo "📄 Application des fichiers Kubernetes..."
-                        kubectl apply -f k8s/deployment.yaml
-                        kubectl apply -f k8s/service.yaml
-                    """
-                    
-                    // Vérifier le déploiement
-                    sh """
-                        echo "🔍 Vérification du déploiement..."
-                        kubectl rollout status deployment/${K8S_DEPLOYMENT} -n ${K8S_NAMESPACE} --timeout=180s
-                    """
+                    // Afficher les fichiers créés
+                    sh '''
+                        echo "📋 Fichiers Kubernetes créés :"
+                        ls -la k8s-manifests/
+                        echo ""
+                        echo "=== Contenu des fichiers ==="
+                        for file in k8s-manifests/*.yaml; do
+                            echo "=== \$file ==="
+                            cat \$file
+                            echo ""
+                        done
+                    '''
                 }
-                echo '✅ Déploiement Kubernetes terminé'
+                echo '✅ Fichiers Kubernetes préparés'
             }
         }
 
-        // ==================== ÉTAPE 7 : VÉRIFICATION ====================
-        stage('7️⃣ Vérification du déploiement') {
+        // ==================== ÉTAPE 5 : DÉPLOIEMENT KUBERNETES ====================
+        stage('5️⃣ Déployer sur Minikube') {
+            steps {
+                echo '🚀 Déploiement sur Minikube...'
+                
+                script {
+                    // 1. Copier le JAR dans un emplacement accessible
+                    sh """
+                        echo "📦 Copie du JAR..."
+                        sudo mkdir -p /tmp/${APP_NAME}
+                        sudo cp target/*.jar /tmp/${APP_NAME}/app.jar
+                        sudo chmod 644 /tmp/${APP_NAME}/app.jar
+                        
+                        echo "✅ JAR copié :"
+                        ls -lh /tmp/${APP_NAME}/
+                    """
+                    
+                    // 2. Vérifier l'accès Kubernetes
+                    sh '''
+                        echo "🔍 Vérification de l'accès Kubernetes..."
+                        kubectl cluster-info
+                        kubectl get nodes
+                        kubectl get pods --all-namespaces
+                    '''
+                    
+                    // 3. Appliquer les configurations
+                    sh """
+                        echo "⚙️  Application des manifests..."
+                        kubectl apply -f k8s-manifests/deployment.yaml
+                        kubectl apply -f k8s-manifests/service.yaml
+                    """
+                    
+                    // 4. Vérifier le déploiement
+                    sh '''
+                        echo "📊 État du déploiement..."
+                        kubectl get deployments -n ${K8S_NAMESPACE}
+                        kubectl get pods -n ${K8S_NAMESPACE} -o wide
+                        kubectl get services -n ${K8S_NAMESPACE}
+                    '''
+                    
+                    // 5. Attendre que le pod soit prêt
+                    sh '''
+                        echo "⏳ Attente du démarrage du pod..."
+                        timeout 60 bash -c '
+                            until kubectl get pods -n ${K8S_NAMESPACE} -l app=${APP_NAME} -o jsonpath="{.items[0].status.phase}" | grep -q "Running"; do
+                                echo "Pod en cours de démarrage..."
+                                sleep 5
+                            done
+                            echo "✅ Pod en cours d\'exécution"
+                        '
+                    '''
+                }
+                echo '✅ Déploiement Minikube terminé'
+            }
+        }
+
+        // ==================== ÉTAPE 6 : VÉRIFICATION ====================
+        stage('6️⃣ Vérifier l\'application') {
             steps {
                 echo '🔍 Vérification finale...'
                 
                 script {
+                    // 1. Obtenir les infos du service
                     sh """
-                        # Vérifier les pods
-                        echo "📦 Pods:"
-                        kubectl get pods -n ${K8S_NAMESPACE} -l app=student-management
+                        echo "🌐 Informations du service :"
+                        kubectl describe service ${K8S_SERVICE} -n ${K8S_NAMESPACE}
                         
-                        # Vérifier les déploiements
-                        echo "🚀 Déploiements:"
-                        kubectl get deployments -n ${K8S_NAMESPACE}
-                        
-                        # Vérifier les services
-                        echo "🔌 Services:"
-                        kubectl get svc -n ${K8S_NAMESPACE}
-                        
-                        # Obtenir l'URL Minikube
-                        echo "🌐 URLs d'accès:"
-                        minikube service ${K8S_SERVICE} -n ${K8S_NAMESPACE} --url || echo "Minikube non disponible"
+                        echo ""
+                        echo "🔗 URL Minikube :"
+                        minikube service ${K8S_SERVICE} -n ${K8S_NAMESPACE} --url || echo "Utilisez : minikube service list"
                     """
                     
-                    // Test de santé
-                    sh """
-                        # Attendre que l'application soit prête
-                        sleep 10
+                    // 2. Vérifier les logs
+                    sh '''
+                        echo "📝 Logs de l\'application :"
+                        kubectl logs -n ${K8S_NAMESPACE} -l app=${APP_NAME} --tail=20 || echo "Logs non disponibles encore"
+                    '''
+                    
+                    // 3. Tester l'application
+                    sh '''
+                        echo "🧪 Test de santé de l\'application..."
+                        # Obtenir l'IP et le port
+                        NODE_PORT=$(kubectl get service ${K8S_SERVICE} -n ${K8S_NAMESPACE} -o jsonpath="{.spec.ports[0].nodePort}")
+                        MINIKUBE_IP=$(minikube ip)
                         
-                        # Obtenir l'URL du service
-                        SERVICE_URL=\$(minikube service ${K8S_SERVICE} -n ${K8S_NAMESPACE} --url 2>/dev/null | head -1)
-                        
-                        if [ ! -z "\$SERVICE_URL" ]; then
-                            echo "Testing health endpoint at: \$SERVICE_URL/actuator/health"
-                            curl -f \$SERVICE_URL/actuator/health || echo "Health check failed"
+                        if [ ! -z "$NODE_PORT" ] && [ ! -z "$MINIKUBE_IP" ]; then
+                            echo "Testing: http://$MINIKUBE_IP:$NODE_PORT/actuator/health"
+                            curl -f http://$MINIKUBE_IP:$NODE_PORT/actuator/health || echo "Health check échoué"
                         else
-                            echo "⚠️  Impossible d'obtenir l'URL du service"
+                            echo "⚠️  Impossible d'obtenir les informations de connexion"
                         fi
-                    """
+                    '''
                 }
                 echo '✅ Vérification terminée'
+            }
+        }
+
+        // ==================== ÉTAPE 7 : NETTOYAGE (Optionnel) ====================
+        stage('7️⃣ Nettoyage') {
+            steps {
+                echo '🧹 Nettoyage...'
+                script {
+                    // Optionnel : supprimer les ressources après test
+                    // sh "kubectl delete -f k8s-manifests/ --ignore-not-found"
+                    
+                    // Nettoyer le JAR temporaire
+                    sh """
+                        echo "Suppression des fichiers temporaires..."
+                        sudo rm -rf /tmp/${APP_NAME} || true
+                    """
+                }
+                echo '✅ Nettoyage effectué'
             }
         }
     }
 
     post {
         always {
-            echo '🧹 Nettoyage...'
+            echo '📊 Rapport final...'
             script {
-                // Nettoyer les images locales pour économiser l'espace
-                sh """
-                    docker rmi ${DOCKER_IMAGE}:${DOCKER_TAG} 2>/dev/null || true
-                    docker rmi ${DOCKER_IMAGE}:latest 2>/dev/null || true
-                """
+                sh '''
+                    echo "=== ÉTAT FINAL KUBERNETES ==="
+                    kubectl get all -n ${K8S_NAMESPACE} | grep ${APP_NAME} || echo "Aucune ressource trouvée"
+                    
+                    echo ""
+                    echo "=== SERVICES MINIKUBE ==="
+                    minikube service list || echo "Minikube service non disponible"
+                '''
             }
         }
         
         success {
             echo '🎉 🎉 🎉 PIPELINE RÉUSSIE ! 🎉 🎉 🎉'
-            echo "Image Docker: ${DOCKER_IMAGE}:${DOCKER_TAG}"
-            echo "Déploiement: ${K8S_DEPLOYMENT}"
-            echo "Service: ${K8S_SERVICE}"
-            
-            // Notification optionnelle
-            emailext (
-                subject: "✅ Pipeline réussie: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                body: """
-                Pipeline ${env.JOB_NAME} #${env.BUILD_NUMBER} terminée avec succès!
-                
-                Détails:
-                - Image Docker: ${DOCKER_IMAGE}:${DOCKER_TAG}
-                - Déploiement K8s: ${K8S_DEPLOYMENT}
-                - Lien Jenkins: ${env.BUILD_URL}
-                
-                Pour accéder à l'application: minikube service ${K8S_SERVICE}
-                """,
-                to: 'votre-email@example.com'
-            )
+            echo "📌 Application déployée sur Minikube"
+            echo "📌 Pour y accéder : minikube service ${K8S_SERVICE} --url"
+            echo "📌 Pour voir les logs : kubectl logs -l app=${APP_NAME} -f"
         }
         
         failure {
-            echo '❌ ❌ ❌ PIPELINE ÉCHOUÉE ❌ ❌ ❌'
-            
-            // Rollback automatique
+            echo '❌ Pipeline échouée - Debug information :'
             script {
-                sh """
-                    echo "🔄 Tentative de rollback..."
-                    kubectl rollout undo deployment/${K8S_DEPLOYMENT} -n ${K8S_NAMESPACE} || echo "Rollback impossible"
-                """
+                sh '''
+                    echo "=== DÉTAILS DES ERREURS ==="
+                    kubectl describe pods -n ${K8S_NAMESPACE} -l app=${APP_NAME} || echo "Pas de pods"
+                    kubectl get events -n ${K8S_NAMESPACE} --sort-by=.metadata.creationTimestamp | tail -20
+                '''
             }
-        }
-        
-        unstable {
-            echo '⚠️  Pipeline instable - vérifiez les tests'
         }
     }
 }
