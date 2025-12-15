@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     tools {
-        maven 'M2_HOME'     // nom de ton installation Maven dans Jenkins
-        jdk 'JAVA_HOME'     // nom de ton JDK dans Jenkins
+        maven 'M2_HOME'      // Nom EXACT de Maven dans Jenkins
+        jdk 'JAVA_HOME'      // Nom EXACT du JDK dans Jenkins
     }
 
     stages {
@@ -11,7 +11,8 @@ pipeline {
         stage('1️⃣ Clone Repository') {
             steps {
                 echo '📥 Clonage du repository Git...'
-                git branch: 'main', url: 'https://github.com/bahijabaj123/student-management.git'
+                git branch: 'main',
+                    url: 'https://github.com/bahijabaj123/student-management.git'
                 echo '✅ Clonage terminé'
             }
         }
@@ -24,7 +25,7 @@ pipeline {
             }
         }
 
-        stage('3️⃣ Test & Package (Tests Sautés)') {
+        stage('3️⃣ Package Project') {
             steps {
                 echo '📦 Packaging du projet...'
                 sh 'mvn package -DskipTests'
@@ -32,27 +33,24 @@ pipeline {
             }
         }
 
-        stage('4️⃣ Package JAR') {
+        stage('4️⃣ SonarQube Analysis') {
+            steps {
+                echo '🔍 Analyse de la qualité du code avec SonarQube...'
+                withSonarQubeEnv('SonarQube') {
+                    sh """
+                    mvn sonar:sonar \
+                    -Dsonar.projectKey=student-management \
+                    -Dsonar.projectName=student-management
+                    """
+                }
+            }
+        }
+
+        stage('5️⃣ Package JAR') {
             steps {
                 echo '📦 Packaging final en JAR...'
                 sh 'mvn clean package -DskipTests'
                 echo '✅ JAR prêt'
-            }
-        }
-
-        stage('5️⃣ SonarQube Analysis') {
-            environment {
-                SONAR_TOKEN = credentials('sonar') 
-            }
-            steps {
-                echo '🔍 Analyse SonarQube en cours...'
-                withSonarQubeEnv('SonarQube') { 
-                 sh """
-            mvn sonar:sonar \
-            -Dsonar.projectKey=student-management \
-            -Dsonar.projectName=student-management
-            """                }
-                echo '✅ Analyse SonarQube terminée'
             }
         }
 
@@ -62,16 +60,14 @@ pipeline {
                 archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
             }
         }
-
     }
 
     post {
-        failure {
-            echo '❌ Le pipeline a échoué'
-        }
         success {
             echo '🎉 Pipeline terminé avec succès'
         }
+        failure {
+            echo '❌ Le pipeline a échoué'
+        }
     }
 }
-
