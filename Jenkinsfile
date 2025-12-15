@@ -1,10 +1,9 @@
-
 pipeline {
     agent any
 
     tools {
-        maven 'M2_HOME'     // correspond à ton installation Maven sur Jenkins
-        jdk 'JAVA_HOME'     // correspond à ton installation JDK sur Jenkins
+        maven 'M2_HOME'     // nom de ton installation Maven dans Jenkins
+        jdk 'JAVA_HOME'     // nom de ton JDK dans Jenkins
     }
 
     stages {
@@ -41,7 +40,20 @@ pipeline {
             }
         }
 
-        stage('5️⃣ Archive Artifact') {
+        stage('5️⃣ SonarQube Analysis') {
+            environment {
+                SONAR_TOKEN = credentials('sonar') 
+            }
+            steps {
+                echo '🔍 Analyse SonarQube en cours...'
+                withSonarQubeEnv('SonarQube') { 
+                    sh "mvn sonar:sonar -Dsonar.projectKey=student-management -Dsonar.login=${SONAR_TOKEN}"
+                }
+                echo '✅ Analyse SonarQube terminée'
+            }
+        }
+
+        stage('6️⃣ Archive Artifact') {
             steps {
                 echo '📁 Archivage du fichier JAR...'
                 archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
@@ -59,3 +71,4 @@ pipeline {
         }
     }
 }
+
