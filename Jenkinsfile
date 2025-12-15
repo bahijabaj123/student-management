@@ -47,8 +47,11 @@ pipeline {
             steps {
                 echo '🔍 Analyse SonarQube en cours...'
                 withSonarQubeEnv('SonarQube') { 
-                    sh "mvn sonar:sonar -Dsonar.projectKey=student-management -Dsonar.login=${SONAR_TOKEN}"
-                }
+                 sh """
+            mvn sonar:sonar \
+            -Dsonar.projectKey=student-management \
+            -Dsonar.projectName=student-management
+            """                }
                 echo '✅ Analyse SonarQube terminée'
             }
         }
